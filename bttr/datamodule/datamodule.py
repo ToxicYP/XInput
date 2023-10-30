@@ -87,7 +87,6 @@ class CstDataSet(Dataset):
         self.bs = batch_size
         self.isTrain = istrain
         self.isAug = is_aug
-        self.Test500 = True if datatype == "val" else False
         with self.env.begin() as txn:
             cursor = txn.cursor()
             count = sum(1 for _ in cursor)
@@ -125,8 +124,6 @@ class CstDataSet(Dataset):
         return data
                 
     def __len__(self):
-        if self.Test500:
-            return 500
         return 5000 if self.isTrain else int(self.len / self.bs / 2)
 
 class CROHMEDatamodule(pl.LightningDataModule):

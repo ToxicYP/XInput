@@ -144,7 +144,7 @@ class CROHMEDatamodule(pl.LightningDataModule):
         datadir = self.datapath
         if stage == "fit" or stage is None:
             self.train_dataset = CstDataSet(datadir, "train", self.batch_size,istrain=True,is_aug=self.is_aug)
-            self.val_dataset = CstDataSet(datadir, "val", 1,istrain=True,is_aug=False)
+            self.val_dataset = CstDataSet(datadir, "val", 1,istrain=False,is_aug=False)
         if stage == "test" or stage is None:
             self.test_dataset = CstDataSet(datadir, "test", 1,istrain=False,is_aug=False)
 

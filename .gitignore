@@ -133,3 +133,4 @@ result.zip
 data/
 usegpu.py
 checkloss.py
+result/

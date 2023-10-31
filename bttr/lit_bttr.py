@@ -162,22 +162,9 @@ class LitBTTR(pl.LightningModule):
             self.resdict[name] = [subdict]
         else:
             self.resdict[name].append(subdict)
-        
         return 0
-        # chosen = max(self.resdict[name], key=lambda x: x["score"])
-        # best_hyp = chosen["best_hyp"]
-
-        # self.exprate_recorder(best_hyp.seq, batch.indices[0])
-        # correct = True if best_hyp.seq == batch.indices[0] else False
-        # return batch.img_bases[0], vocab.indices2label(best_hyp.seq), correct, best_hyp.score
-
-
-    def test_epoch_end(self, test_outputs) -> None:
-
-        submitlines = []
-        submitlines_detail = []
-        total_loss = 0
-        print(f"length of total file: {len(test_outputs)}")
+    
+    def test_epoch_end(self,test_epoch) -> None:
         for bk,v_list in self.resdict.items():
             k = bk.decode()
             max_score = max(v["score"] for v in v_list)
@@ -185,19 +172,16 @@ class LitBTTR(pl.LightningModule):
             best_hyp = chosen["best_hyp"]
             self.exprate_recorder(best_hyp, v_list[0]["gt"])
             best_hyp = vocab.indices2label(best_hyp)
+
             content = "img_name:\t{}\ngt:\t{}\npd:\t{}\tscore:{}\n\{}\n".format(
                     k,
                     vocab.indices2label(v_list[0]["gt"]),
                     best_hyp,
                     max_score,
                     "=="*10)
-            total_loss += max_score
-            
             with open(f"./result/{k}.txt", "w") as f:
                 f.writelines(content)
-            submitlines.append({"filename":k,"result":best_hyp})
-            submitlines_detailsub = {"filename":k,"result":best_hyp,"detail":[]}
-            for v in v_list:
+            for v in sorted(v_list, key=lambda x: x["score"], reverse=True):
                 content = "{}\t{}\t{}\n".format(
                     "*" if v["score"] == max_score else " ",
                     vocab.indices2label(v["best_hyp"]),
@@ -205,25 +189,8 @@ class LitBTTR(pl.LightningModule):
                 )
                 with open(f"./result/{k}.txt", "a") as f:
                     f.writelines(content)
-                submitlines_detailsub["detail"].append({"score":v["score"], "pd":vocab.indices2label(v["best_hyp"])})
-            submitlines_detail.append(submitlines_detailsub)
-        # with zipfile.ZipFile("result.zip", "w") as zip_f:
-        #     for img_base, pred,correct,score in test_outputs:
-        #         if img_base == 0:
-        #             continue
-        #         content = f"%{img_base}\n{pred}\n{score}".encode()
-        #         submitlines.append({"filename":img_base,"result":pred})
-        #         with zip_f.open(f"{correct}_{img_base}.txt", "w") as f:
-        #             f.write(content)
         exprate = self.exprate_recorder.compute()
         print(f"EVALUATION: ExpressionRecall: {exprate} ")
-        with open("recall.txt","w") as f:
-            f.writelines(f"{exprate}")
-        # submitlines_detail.append({"Score": float(exprate), "Loss":total_loss})
-        with open("answer.json","w") as f:
-            json.dump(submitlines,f)
-        with open("answer_detail.json","w") as f:
-            json.dump(submitlines_detail,f)
         
     def configure_optimizers(self):
         optimizer = optim.Adadelta(

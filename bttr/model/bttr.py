@@ -37,7 +37,7 @@ class BTTR(pl.LightningModule):
             dim_feedforward=dim_feedforward,
             dropout=dropout,
         )
-        self.up = Up(in_channels=d_model)
+        # self.up = Up(in_channels=d_model)
 
     def forward(
         self, img: FloatTensor, img_mask: LongTensor, tgt: LongTensor, outinput: LongTensor
@@ -80,9 +80,9 @@ class BTTR(pl.LightningModule):
         
         out = self.decoder(feature, mask, tgt)
         feature2 = rearrange(feature1,"b h w d -> b d h w")
-        reimg = self.up(feature2)
+        # reimg = self.up(feature2)
         # img = self.GetImage(feature, mask, tgt)
-        return out, reimg
+        return out, 0
 
     def beam_search(
         self, img: FloatTensor, img_mask: LongTensor, beam_size: int, max_len: int

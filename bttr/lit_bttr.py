@@ -12,6 +12,9 @@ from bttr.utils import ExpRateRecorder, Hypothesis, ce_loss, to_bi_tgt_out, loss
 
 import json
 
+def optimizer_load_state_dict(state_dict):
+    print("IN optimizer_load_state_dict")
+    pass
 
 class LitBTTR(pl.LightningModule):
     def __init__(
@@ -47,6 +50,7 @@ class LitBTTR(pl.LightningModule):
         )
 
         self.exprate_recorder = ExpRateRecorder()
+        self.load_same_state_dict = True
         self.resdict = {}
         self.loss = 10
     def forward(
@@ -107,7 +111,24 @@ class LitBTTR(pl.LightningModule):
         model_dict.update(pretrained_dict)
         checkpoint = model_dict
         
+    def load_state_dict(self, state_dict, strict=False):
+        new_state_dict = {}
+        # 获取模型的默认初始化
+        default_init = {key: param.clone().zero_() for key, param in self.state_dict().items()}
+        
+        # 更新新状态字典的值
+        for key in default_init:
+            if key in state_dict:
+                new_state_dict[key] = state_dict[key]
+            else:
+                new_state_dict[key] = default_init[key]
+        
+        if new_state_dict != state_dict:
+            state_dict = new_state_dict
+            self.load_same_state_dict = False
 
+        self.bttr.load_state_dict(state_dict, strict=False)
+        print("Load_same_state_dict:", self.load_same_state_dict)
 
     def training_step(self, batch: Batch, _):
         tgt, out = to_bi_tgt_out(batch.indices, self.device)
@@ -191,8 +212,11 @@ class LitBTTR(pl.LightningModule):
                     f.writelines(content)
         exprate = self.exprate_recorder.compute()
         print(f"EVALUATION: ExpressionRecall: {exprate} ")
-        
+
     def configure_optimizers(self):
+        """
+        ./Python/3.9/lib/python/site-packages/pytorch_lightning/trainer/connectors/checkpoint_connector.py 中restore函数（约95行）需要将load_optimizer_states强制设置为False
+        """
         optimizer = optim.Adadelta(
             self.parameters(),
             lr=self.hparams.learning_rate,
@@ -211,7 +235,7 @@ class LitBTTR(pl.LightningModule):
             "monitor": "val_ExpRate",
             "interval": "epoch",
             "frequency": self.trainer.check_val_every_n_epoch,
-            "strict": True,
+            "strict": False,
         }
 
         return {"optimizer": optimizer, "lr_scheduler": scheduler}

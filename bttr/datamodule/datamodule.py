@@ -16,6 +16,7 @@ from torchvision.transforms import transforms
 import lmdb
 
 from .img_aug.transform import get_transform
+from .img_aug.generate import getword, getimage
 
 from .vocab import CROHMEVocab
 vocab = CROHMEVocab(charlen=94)
@@ -82,49 +83,31 @@ def getbatch(batch):
             
 class CstDataSet(Dataset):
     def __init__(self, datadir: str, datatype: str, batch_size: int, istrain=True,is_aug=True):
-        lmdbpath = os.path.join(datadir, datatype + ".lmdb")
-        self.env = lmdb.open(lmdbpath, readonly=True)
         self.bs = batch_size
         self.isTrain = istrain
         self.isAug = is_aug
-        with self.env.begin() as txn:
-            cursor = txn.cursor()
-            count = sum(1 for _ in cursor)
-        self.len = count
         self.transform = get_transform(img_size=[128, 32],augment=self.isAug)
 
     def __getitem__(self,index):
-        
-        env = self.env
-        if self.isTrain:
-            indexes = random.sample(range(int(self.len / self.bs / 2)), self.bs)
-        else:
-            start_idx = index * self.bs
-            end_idx = (index + 1) * self.bs 
-            indexes = range(start_idx, end_idx)
-        filenames = []
+        words = []
         images = []
-        annotations = []
-        with env.begin() as txn:
-            for item_idx in indexes:
-                image_key = f"{item_idx}_image".encode()
-                label_key = f"{item_idx}_label".encode()
-                imgbuf = txn.get(image_key)
-                buf = io.BytesIO(imgbuf)
-                img = Image.open(buf).convert('RGB')
-                tensor = self.transform(img)
-                img = 0.299 * tensor[0] + 0.587 * tensor[1] + 0.114 * tensor[2]
-                img = img.view(1,128,32)
-                label = txn.get(label_key).decode()
-                filenames.append(image_key)
-                images.append(img)
-                annotations.append(label)
-            batch = [filenames, images, annotations, [0] * len(filenames)]
-            data = getbatch(batch)
-        return data
-                
+        fnames = []
+        gts = []
+        for i in range(self.bs):
+            word = getword(vocab.target_charset)
+            img = getimage(word,"/dev/null/")
+            tensor = self.transform(img)
+            img = 0.299 * tensor[0] + 0.587 * tensor[1] + 0.114 * tensor[2]
+            img = img.view(1,128,32)
+            words.append(word)
+            images.append(img)
+            fnames.append(word)
+            gts.append(img)
+        batch = [fnames, images, words, gts]
+        return getbatch(batch)
+        
     def __len__(self):
-        return 5000 if self.isTrain else int(self.len / self.bs / 2)
+        return 5000 if self.isTrain else 100
 
 class CROHMEDatamodule(pl.LightningDataModule):
     def __init__(

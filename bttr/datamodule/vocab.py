@@ -21,6 +21,7 @@ class CROHMEVocab:
             word2idx[t] = idx
             idx += 1
         
+        self.target_charset = target_charset
         self.word2idx = word2idx
         self.idx2word: Dict[int, str] = {v: k for k, v in self.word2idx.items()}
         self.unsupported = re.compile(f'[^{re.escape(target_charset)}]')

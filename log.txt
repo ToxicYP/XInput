@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/mnt/e/Project/XInput/train.py", line 1, in <module>
+    from pytorch_lightning.utilities.cli import LightningCLI
+ModuleNotFoundError: No module named 'pytorch_lightning'

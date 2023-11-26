@@ -174,6 +174,9 @@ class CstDataSet(Dataset):
                 img = img.resize((256,48), Image.ANTIALIAS)
 
                 label = txn.get(label_key)
+
+
+
                 filenames.append(image_key)
                 images.append(img)
                 annotations.append(label)
@@ -192,9 +195,12 @@ class CROHMEDatamodule(pl.LightningDataModule):
         datapath: str,
         batch_size: int = 8,
         num_workers: int = 0,
-        is_aug = False
+        is_aug = False,
+        charlen: int = 94,
     ) -> None:
         super().__init__()
+        global vocab 
+        vocab = CROHMEVocab(charlen=charlen)
         self.datapath = datapath
         self.batch_size = batch_size
         self.num_workers = num_workers

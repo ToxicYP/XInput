@@ -1,6 +1,6 @@
-export NCCL_IB_DISABLE=1; export NCCL_P2P_DISABLE=1; NCCL_DEBUG=INFO; export CUDA_LAUNCH_BLOCKING=1;
+# export NCCL_IB_DISABLE=1; export NCCL_P2P_DISABLE=1; NCCL_DEBUG=INFO; export CUDA_LAUNCH_BLOCKING=1;
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/root/.local/conda/envs/bttr/lib
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/root/.local/conda/envs/bttr/lib
 nohup python -u train.py --config config.yaml > log.txt 2>&1 &
 # python train.py --config config.yaml
 

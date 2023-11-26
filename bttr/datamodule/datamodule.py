@@ -1,10 +1,10 @@
 
 import os
-import io
-import random
-
+import json
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
+from zipfile import ZipFile
+from io import BytesIO
 
 import pytorch_lightning as pl
 import torch
@@ -13,17 +13,64 @@ from torch import FloatTensor, LongTensor
 from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 from torchvision.transforms import transforms
-import lmdb
-
-from .img_aug.transform import get_transform
-from .img_aug.generate import getword, getimage
+import requests
+import random
 
 from .vocab import CROHMEVocab
-vocab = CROHMEVocab(charlen=94)
+
+import pickle
+import numpy as np
+import time
+import cv2
+import lmdb
+vocab = CROHMEVocab()
 
 Data = List[Tuple[str, Image.Image, List[str]]]
 
 MAX_SIZE = 15e8  # change here accroading to your GPU memory
+
+def img_aug(img):
+    w,h = img.size
+    if random.random() > 0.5:
+        img = transforms.ToTensor()(img)
+        return img
+    if random.random() > 0.5:
+        img = transforms.Pad(padding=10, fill = 0)(img)
+    if random.random() > 0.5:
+        ratio = random.random() * 0.2 + 0.8
+        img = transforms.Resize(size = [int(img.height * ratio), int(img.width * ratio)])(img)
+    ## 加一个丢失信息的resize
+    if random.random() > 0.5:
+        img = transforms.ColorJitter(brightness=.5, hue=.3)(img)
+    if random.random() > 0.5:
+        img = transforms.RandomPerspective(distortion_scale=0.1,p=1)(img)
+    if random.random() > 0.5:
+        img = transforms.RandomRotation(degrees = 10)(img)
+    if random.random() > 0.5:
+        img = transforms.RandomEqualize()(img)
+    img = img.resize((w,h))
+    img = transforms.ToTensor()(img)
+    return img
+
+def resize_image_with_limit(img, max_width = 256, max_height = 48):
+    
+    # 获取原始图片的宽和高
+    original_width, original_height = img.size
+
+    # 计算缩放比例
+    width_ratio = max_width / original_width
+    height_ratio = max_height / original_height
+    scale_factor = min(width_ratio, height_ratio)
+    
+    # 计算缩放后的宽和高
+    new_width = int(original_width * scale_factor)
+    new_height = int(original_height * scale_factor)
+    
+    # 使用Image.thumbnail函数进行等比例缩放
+    img.thumbnail((new_width, new_height), Image.ANTIALIAS)
+    
+    # 返回缩放后的图片和缩放比例
+    return img, scale_factor
 
 @dataclass
 class Batch:
@@ -48,15 +95,16 @@ class Batch:
 def collate_fn(batch):
     return batch[0]
 
-def getbatch(batch):
+def getbatch(batch,istrain=False,is_aug=False):
     fnames = batch[0]
     images_x = batch[1]
-    seqs_y = [vocab.label2indices(x) for x in batch[2]]
+    seqs_y = [vocab.words2indices(x.decode()) for x in batch[2]]
     gt_x = batch[3]
     heights_x = []
     widths_x = []
     imgs = []
-    for img, gt in zip(images_x,gt_x):
+    for img,gt in zip(images_x,gt_x):
+        img = img_aug(img) if is_aug else transforms.ToTensor()(img) 
         # gt = transforms.ToTensor()(gt) 
         imgs.append(img)
         heights_x.append(img.size(1))
@@ -83,69 +131,60 @@ def getbatch(batch):
             
 class CstDataSet(Dataset):
     def __init__(self, datadir: str, datatype: str, batch_size: int, istrain=True,is_aug=True):
-        # lmdbpath = os.path.join(datadir, datatype + ".lmdb")
-        # self.env = lmdb.open(lmdbpath, readonly=True)
+        lmdbpath = os.path.join(datadir, datatype + ".lmdb")
+        # lmdbpath = "./data/test.lmdb"
+        self.env = lmdb.open(lmdbpath, readonly=True)
         self.bs = batch_size
         self.isTrain = istrain
         self.isAug = is_aug
-        # with self.env.begin() as txn:
-            # cursor = txn.cursor()
-            # count = sum(1 for _ in cursor)
-        # self.len = count
-        self.transform = get_transform(img_size=[128, 32],augment=self.isAug)
+        self.Test500 = True if datatype == "val" else False
+        
+        with self.env.begin() as txn:
+            cursor = txn.cursor()
+            count = sum(1 for _ in cursor)
+        self.len = count
+    
+    def getitem_test(self, index):
+        env = self.env
+
+        filenames = []
+        images = []
+        annotations = []
 
     def __getitem__(self,index):
-        words = []
-        images = []
-        fnames = []
-        gts = []
-        for i in range(self.bs):
-            word = getword(vocab.target_charset)
-            img = getimage(word,"/dev/null/")
-            tensor = self.transform(img)
-            img = 0.299 * tensor[0] + 0.587 * tensor[1] + 0.114 * tensor[2]
-            img = img.view(1,128,32)
-            words.append(word)
-            images.append(img)
-            fnames.append(word)
-            gts.append(img)
-        batch = [fnames, images, words, gts]
-        return getbatch(batch)
-
-
-    # def __getitem__(self,index):
         
-    #     env = self.env
-    #     if self.isTrain:
-    #         indexes = random.sample(range(int(self.len / self.bs / 2)), self.bs)
-    #     else:
-    #         start_idx = index * self.bs
-    #         end_idx = (index + 1) * self.bs 
-    #         indexes = range(start_idx, end_idx)
-    #     filenames = []
-    #     images = []
-    #     annotations = []
-    #     with env.begin() as txn:
-    #         for item_idx in indexes:
-    #             image_key = f"{item_idx}_image".encode()
-    #             label_key = f"{item_idx}_label".encode()
-    #             imgbuf = txn.get(image_key)
-    #             buf = io.BytesIO(imgbuf)
-    #             img = Image.open(buf).convert('RGB')
-    #             tensor = self.transform(img)
-    #             img = 0.299 * tensor[0] + 0.587 * tensor[1] + 0.114 * tensor[2]
-    #             img = img.view(1,128,32)
-    #             label = txn.get(label_key).decode()
-    #             filenames.append(image_key)
-    #             images.append(img)
-    #             annotations.append(label)
-    #         batch = [filenames, images, annotations, [0] * len(filenames)]
-    #         data = getbatch(batch)
-    #     return data
+        env = self.env
+        if self.isTrain:
+            indexes = random.sample(range(int(self.len / self.bs / 2)), self.bs)
+        else:
+            start_idx = index * self.bs
+            end_idx = (index + 1) * self.bs 
+            indexes = range(start_idx, end_idx)
+        filenames = []
+        images = []
+        annotations = []
+        with env.begin() as txn:
+            for item_idx in indexes:
+                image_key = f"{item_idx}_image".encode()
+                label_key = f"{item_idx}_label".encode()
+                image_value = txn.get(image_key)
+                img_stream = BytesIO(image_value)
+                img = Image.open(img_stream)
+
+                img = img.resize((256,48), Image.ANTIALIAS)
+
+                label = txn.get(label_key)
+                filenames.append(image_key)
+                images.append(img)
+                annotations.append(label)
+            batch = [filenames, images, annotations, [0] * len(filenames)]
+            data = getbatch(batch,self.isTrain, self.isAug)
+            return data
                 
     def __len__(self):
-        # return 5000 if self.isTrain else int(self.len / self.bs / 2)
-        return 5000 if self.isTrain else 100
+        if self.Test500:
+            return 500
+        return 5000 if self.isTrain else int(self.len / self.bs / 2)
 
 class CROHMEDatamodule(pl.LightningDataModule):
     def __init__(
@@ -165,7 +204,7 @@ class CROHMEDatamodule(pl.LightningDataModule):
         datadir = self.datapath
         if stage == "fit" or stage is None:
             self.train_dataset = CstDataSet(datadir, "train", self.batch_size,istrain=True,is_aug=self.is_aug)
-            self.val_dataset = CstDataSet(datadir, "val", 1,istrain=False,is_aug=False)
+            self.val_dataset = CstDataSet(datadir, "val", 1,istrain=True,is_aug=False)
         if stage == "test" or stage is None:
             self.test_dataset = CstDataSet(datadir, "test", 1,istrain=False,is_aug=False)
 

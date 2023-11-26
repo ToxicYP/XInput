@@ -9,7 +9,13 @@ from torchmetrics import Metric
 
 from bttr.datamodule import vocab
 
+import matplotlib.font_manager as mfm
+from matplotlib import mathtext
+from PIL import Image
+import numpy as np
+from io import BytesIO
 import random
+import json
 
 class Hypothesis:
     seq: List[int]
@@ -41,20 +47,31 @@ class Hypothesis:
     def __str__(self):
         return f"seq: {self.seq}, score: {self.score}"
 
+
 class ExpRateRecorder(Metric):
     def __init__(self, dist_sync_on_step=False):
         super().__init__(dist_sync_on_step=dist_sync_on_step)
+
         self.add_state("total_line", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("rec", default=torch.tensor(0.0), dist_reduce_fx="sum")
-    
+        self.add_state("wrong", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        
+        with open("./data/vocab.json","r") as f:
+            worddict = json.load(f)
+        self.int2word = {}
+        for k, v in worddict.items():
+            self.int2word[v] = k
+
     def update(self, indices_hat: List[int], indices: List[int]):
-        dist = editdistance.eval(indices_hat, indices)
-        if dist == 0:
-            self.rec += 1
+        # dist = editdistance.eval(indices_hat, indices)
         self.total_line += 1
+        for i,j in zip(indices,indices_hat):
+            if self.int2word[i].lower() != self.int2word[j].lower():
+                self.wrong += 1
+                break
 
     def compute(self) -> float:
-        exp_rate = self.rec / self.total_line
+        exp_rate = 1 - self.wrong / self.total_line
         return exp_rate
 
 
@@ -90,6 +107,36 @@ def ce_loss(
     flat = rearrange(output, "b l -> (b l)")
     loss = F.cross_entropy(flat_hat, flat, ignore_index=ignore_idx)
     return loss
+
+
+def latex2img(text):
+    """LaTex数学公式转图片
+
+        text        - 文本字符串，其中数学公式须包含在两个$符号之间
+        size        - 字号，整型，默认32
+        color       - 颜色，浮点型三元组，值域范围[0,1]，默认深黑色
+        out         - 文件名，仅支持后缀名为.png的文件名。若维None，则返回PIL图像对象
+        kwds        - 关键字参数
+                        dpi         - 输出分辨率（每英寸像素数），默认72
+                        family      - 系统支持的字体，None表示当前默认的字体
+                        weight      - 笔画轻重，可选项包括：normal（默认）、light和bold
+        """
+
+    dpi = 72
+    family = None
+    weight = 'normal'
+    size = 32
+    color = (0.1, 0.1, 0.1)
+
+    if text[0] + text[-1] != "$$":
+        text = "$" + text + "$"
+
+    bfo = BytesIO()  # 创建二进制的类文件对象
+    prop = mfm.FontProperties(family=family, size=size, weight=weight)
+    mathtext.math_to_image(text, bfo, prop=prop, dpi=dpi)
+    im = Image.open(bfo)
+    return im
+
 
 def to_tgt_output(
     tokens: List[List[int]], direction: str, device: torch.device
@@ -193,6 +240,10 @@ def to_tgt_input(tokens: List[List[int]], ratio: float, device: torch.device, is
         for t in token:
             if random.random() < ratio:
                 subtokens[i].append(t)
+            else:
+                subtokens[i].append(0)
+        while len(subtokens[i]) < 30:
+            subtokens[i].append(0)
     subtokens = [torch.tensor(t, dtype=torch.long) for t in subtokens]
     
     lens = [len(t) for t in subtokens]

@@ -69,15 +69,10 @@ class BTTR(pl.LightningModule):
         maskT = (outinput == 0)
         featureT = torch.cat((featureT, featureT), dim=0)  # [2b, t, d]
         maskT = torch.cat((maskT, maskT), dim=0)
-        
         # 文本与图片encode结合
-        if random.random() > 1.5:
-            feature = torch.cat((feature, featureT), dim=1)
-            mask = torch.cat((mask, maskT), dim=1)
-        else:
-            feature = torch.cat((featureT, feature), dim=1)
-            mask = torch.cat((maskT, mask), dim=1)
-        
+        feature = torch.cat((feature, featureT), dim=1)
+        mask = torch.cat((mask, maskT), dim=1)
+    
         out = self.decoder(feature, mask, tgt)
         feature2 = rearrange(feature1,"b h w d -> b d h w")
         reimg = self.up(feature2)

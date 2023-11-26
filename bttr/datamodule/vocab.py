@@ -41,7 +41,6 @@ class CROHMEVocab:
         print(f"Init vocab with size: {len(self.word2idx)}")
 
     def words2indices(self, words: List[str]) -> List[int]:
-        print("In word: ", words)
         if self.lowercase_only:
             words = words.lower()
         elif self.uppercase_only:
